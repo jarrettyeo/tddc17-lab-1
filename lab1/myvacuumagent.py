@@ -1,4 +1,5 @@
 from lab1.liuvacuum import *
+from random import randint
 
 DEBUG_OPT_DENSEWORLDMAP = False
 
@@ -241,10 +242,18 @@ class MyVacuumAgent(Agent):
                     return ACTION_TURN_RIGHT
                 elif self.state.world[self.state.pos_x][self.state.pos_y - 1] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x][self.state.pos_y + 1] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x - 1][self.state.pos_y] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x + 1][self.state.pos_y] != AGENT_STATE_UNKNOWN:
                     print("== 0")
-                    print("so ACTION_FORWARD now")
+                    print("so RANDOM now")
                     self.state.reason_for_last_action = "== 0"
-                    self.state.last_action = ACTION_FORWARD
-                    return ACTION_FORWARD
+                    random_number = randint(0, 3)
+                    if random_number == 0:
+                        direction = ACTION_TURN_RIGHT
+                    elif random_number == 1:
+                        direction = ACTION_TURN_LEFT
+                    else:
+                        direction = ACTION_FORWARD
+                    self.state.last_action = direction
+                    self.state.direction = get_new_direction(self.state.direction, direction)
+                    return direction
                 elif what_is_ahead != AGENT_STATE_UNKNOWN and what_is_ahead != AGENT_STATE_HOME:
                     print("elif")
                     print("so ACTION_TURN_RIGHT now")
