@@ -239,6 +239,12 @@ class MyVacuumAgent(Agent):
                     self.state.last_action = ACTION_TURN_RIGHT
                     self.state.direction = get_new_direction(self.state.direction, ACTION_TURN_RIGHT)
                     return ACTION_TURN_RIGHT
+                elif self.state.world[self.state.pos_x][self.state.pos_y - 1] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x][self.state.pos_y + 1] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x - 1][self.state.pos_y] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x + 1][self.state.pos_y] != AGENT_STATE_UNKNOWN:
+                    print("== 0")
+                    print("so ACTION_FORWARD now")
+                    self.state.reason_for_last_action = "== 0"
+                    self.state.last_action = ACTION_FORWARD
+                    return ACTION_FORWARD
                 elif what_is_ahead != AGENT_STATE_UNKNOWN and what_is_ahead != AGENT_STATE_HOME:
                     print("elif")
                     print("so ACTION_TURN_RIGHT now")
