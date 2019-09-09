@@ -214,6 +214,8 @@ class MyVacuumAgent(Agent):
             return ACTION_NOP
 
         elif algo == "new lane":
+            what_is_ahead = get_what_is_ahead(self.state.world, self.state.pos_x, self.state.pos_y, self.state.direction)
+            print("get_what_is_ahead", what_is_ahead)
             print("self.state.direction", self.state.direction)
             print("self.state.last_action:", self.state.last_action)
             print("self.state.reason_for_last_action:", self.state.reason_for_last_action)
@@ -234,6 +236,13 @@ class MyVacuumAgent(Agent):
                     print("else-if")
                     print("so ACTION_TURN_RIGHT now")
                     self.state.reason_for_last_action = "else-if"
+                    self.state.last_action = ACTION_TURN_RIGHT
+                    self.state.direction = get_new_direction(self.state.direction, ACTION_TURN_RIGHT)
+                    return ACTION_TURN_RIGHT
+                elif what_is_ahead != AGENT_STATE_UNKNOWN and what_is_ahead != AGENT_STATE_HOME:
+                    print("elif")
+                    print("so ACTION_TURN_RIGHT now")
+                    self.state.reason_for_last_action = "elif"
                     self.state.last_action = ACTION_TURN_RIGHT
                     self.state.direction = get_new_direction(self.state.direction, ACTION_TURN_RIGHT)
                     return ACTION_TURN_RIGHT
@@ -268,3 +277,28 @@ def get_new_direction(self_state_direction, new_action):
             self_state_direction = AGENT_DIRECTION_NORTH
 
     return self_state_direction
+
+
+def get_what_is_ahead(self_state_world, self_state_pos_x, self_state_pos_y, self_state_direction):
+
+    global AGENT_STATE_UNKNOWN, AGENT_STATE_WALL, AGENT_STATE_CLEAR, AGENT_STATE_DIRT, AGENT_STATE_HOME
+
+    if self_state_direction == AGENT_DIRECTION_NORTH:
+        item_int = self_state_world[self_state_pos_x][self_state_pos_y - 1]
+    if self_state_direction == AGENT_DIRECTION_SOUTH:
+        item_int = self_state_world[self_state_pos_x][self_state_pos_y + 1]
+    if self_state_direction == AGENT_DIRECTION_EAST:
+        item_int = self_state_world[self_state_pos_x + 1][self_state_pos_y]
+    if self_state_direction == AGENT_DIRECTION_WEST:
+        item_int = self_state_world[self_state_pos_x - 1][self_state_pos_y]
+
+    if item_int == 0:
+        return AGENT_STATE_UNKNOWN
+    elif item_int == 1:
+        return AGENT_STATE_WALL
+    elif item_int == 2:
+        return AGENT_STATE_CLEAR
+    elif item_int == 3:
+        return AGENT_STATE_DIRT
+    elif item_int == 4:
+        return AGENT_STATE_HOME
