@@ -1,5 +1,8 @@
+# ==================================================================================================================== #
+# We use DFS to determine the next node we want to visit, but use BFS via Dijkstra's Algorithm to find out path to target node.
+# ==================================================================================================================== #
+
 from lab1.liuvacuum import *
-from random import randint
 import copy
 
 DEBUG_OPT_DENSEWORLDMAP = False
@@ -15,20 +18,6 @@ AGENT_DIRECTION_EAST = 1
 AGENT_DIRECTION_SOUTH = 2
 AGENT_DIRECTION_WEST = 3
 
-AGENT_STATE_DICT = dict({
-    0: AGENT_STATE_UNKNOWN,
-    1: AGENT_STATE_WALL,
-    2: AGENT_STATE_CLEAR,
-    3: AGENT_STATE_DIRT,
-    4: AGENT_STATE_HOME
-})
-
-AGENT_DIRECTION_DICT = dict({
-    0: AGENT_DIRECTION_NORTH,
-    1: AGENT_DIRECTION_EAST,
-    2: AGENT_DIRECTION_SOUTH,
-    3: AGENT_DIRECTION_WEST
-})
 
 class Coordinate:
     def __init__(self, x, y):
@@ -111,18 +100,8 @@ class MyAgentState:
         self.pos_y = 1
 
         # Additional variables
-        self.reason_for_last_action = ""
-        # self.backtracking_path = []
-        # self.nodes_to_visit = []
-        # self.index = 0
-        # self.node_network = [[None for _ in range(height)] for _ in range(width)]
-
-        # self.visited_coordinates = []
         self.unvisited_coordinates = []
-        # self.last_coordinate = None
-
         self.action_queue = []
-
         self.home = None
         self.commence_return_home = False
 
@@ -260,12 +239,60 @@ class MyVacuumAgent(Agent):
         # Debug
         self.state.print_world_debug()
 
-        # HELPER FUNCTIONS
+        # ====================== #
+        # START HELPER FUNCTIONS #
+        # ====================== #
+
+        def get_new_direction(self_state_direction, new_action):
+            """
+            This function gets new direction given the current direction and new action
+            """
+            if new_action == ACTION_TURN_RIGHT:
+                if self_state_direction == AGENT_DIRECTION_NORTH:
+                    self_state_direction = AGENT_DIRECTION_EAST
+                elif self_state_direction == AGENT_DIRECTION_EAST:
+                    self_state_direction = AGENT_DIRECTION_SOUTH
+                elif self_state_direction == AGENT_DIRECTION_SOUTH:
+                    self_state_direction = AGENT_DIRECTION_WEST
+                elif self_state_direction == AGENT_DIRECTION_WEST:
+                    self_state_direction = AGENT_DIRECTION_NORTH
+
+            elif new_action == ACTION_TURN_LEFT:
+                if self_state_direction == AGENT_DIRECTION_NORTH:
+                    self_state_direction = AGENT_DIRECTION_WEST
+                elif self_state_direction == AGENT_DIRECTION_WEST:
+                    self_state_direction = AGENT_DIRECTION_SOUTH
+                elif self_state_direction == AGENT_DIRECTION_SOUTH:
+                    self_state_direction = AGENT_DIRECTION_EAST
+                elif self_state_direction == AGENT_DIRECTION_EAST:
+                    self_state_direction = AGENT_DIRECTION_NORTH
+
+            return self_state_direction
+
+        def insert_unvisited_coordinates(C):
+            """
+            This function inserts unvisited nodes into state
+            """
+            N = C.get_north_coordinate()
+            S = C.get_south_coordinate()
+            E = C.get_east_coordinate()
+            W = C.get_west_coordinate()
+            NSEW_list = [N, S, E, W]
+            for X in NSEW_list:
+                if X.get_state(self.state.world) in [AGENT_STATE_UNKNOWN, AGENT_STATE_HOME] and X not in self.state.unvisited_coordinates:
+                    self.state.unvisited_coordinates.insert(0, X)
+
         def NSEW_coordinates(C):
+            """
+            This function returns the Coordinates of nodes to the N, S, E, W of current position
+            """
             return Coordinate(C.get_x() + 1, C.get_y()), Coordinate(C.get_x() - 1, C.get_y()), \
                    Coordinate(C.get_x(), C.get_y() + 1), Coordinate(C.get_x(), C.get_y() - 1)
 
         def get_path_to_next_node(start_C, target_C, self_state_world):
+            """
+            This function finds path to target node using BfS implemented with Dijkstra's Algorithm
+            """
             START_C = copy.deepcopy(start_C)
             TARGET_C = copy.deepcopy(target_C)
             START_C.set_back_node(None)
@@ -313,6 +340,9 @@ class MyVacuumAgent(Agent):
                             # P.set_back_node(this_C) # does not work because local variable
 
         def get_actions_from_path(C_path, current_direction):
+            """
+            This function determines the actions to take to travel between all nodes in C_path given a current direction
+            """
             actions = []
             current_C = C_path.pop(-1)
 
@@ -370,7 +400,10 @@ class MyVacuumAgent(Agent):
                 current_C = next_C
 
             return actions
-        # END HELPER FUNCTIONS
+
+        # ==================== #
+        # END HELPER FUNCTIONS #
+        # ==================== #
 
         C = Coordinate(self.state.pos_x, self.state.pos_y)
         # self.state.visited_coordinates.append(C)
@@ -398,24 +431,15 @@ class MyVacuumAgent(Agent):
         # Not necessary to maintain state
         # pass
 
-        # Step 0: Scan NSEW
-        def insert_unvisited_coordinates(C):
-            N = C.get_north_coordinate()
-            S = C.get_south_coordinate()
-            E = C.get_east_coordinate()
-            W = C.get_west_coordinate()
-            NSEW_list = [N, S, E, W]
-            for X in NSEW_list:
-                if X.get_state(self.state.world) in [AGENT_STATE_UNKNOWN, AGENT_STATE_HOME] and X not in self.state.unvisited_coordinates:
-                    self.state.unvisited_coordinates.insert(0, X)
-
-        # Step 1: If unvisited_coordinates is empty, add all unvisited NSEW of current node to list
+        # Step 1: Scan NSEW of current node
+        # If unvisited_coordinates is empty, add all unvisited NSEW of current node to list
         if self.state.action_queue == []:
             insert_unvisited_coordinates(C)
 
         # Step 2: Add path to unvisited node
         # Not necessary to maintain state
         # pass
+
         print("current position: (%s, %s)" % (self.state.pos_x, self.state.pos_y))
         print("current direction: %s" % (direction_to_string(self.state.direction)))
 
@@ -497,70 +521,3 @@ class MyVacuumAgent(Agent):
                     self.state.direction = get_new_direction(self.state.direction, action)
                     return action
                 # ========================================================================= #
-
-
-            # ========================================
-
-def get_new_direction(self_state_direction, new_action):
-
-    if new_action == ACTION_TURN_RIGHT:
-        if self_state_direction == AGENT_DIRECTION_NORTH:
-            self_state_direction = AGENT_DIRECTION_EAST
-        elif self_state_direction == AGENT_DIRECTION_EAST:
-            self_state_direction = AGENT_DIRECTION_SOUTH
-        elif self_state_direction == AGENT_DIRECTION_SOUTH:
-            self_state_direction = AGENT_DIRECTION_WEST
-        elif self_state_direction == AGENT_DIRECTION_WEST:
-            self_state_direction = AGENT_DIRECTION_NORTH
-
-    elif new_action == ACTION_TURN_LEFT:
-        if self_state_direction == AGENT_DIRECTION_NORTH:
-            self_state_direction = AGENT_DIRECTION_WEST
-        elif self_state_direction == AGENT_DIRECTION_WEST:
-            self_state_direction = AGENT_DIRECTION_SOUTH
-        elif self_state_direction == AGENT_DIRECTION_SOUTH:
-            self_state_direction = AGENT_DIRECTION_EAST
-        elif self_state_direction == AGENT_DIRECTION_EAST:
-            self_state_direction = AGENT_DIRECTION_NORTH
-
-    return self_state_direction
-
-
-def get_what_is_ahead(self_state_world, self_state_pos_x, self_state_pos_y, self_state_direction):
-
-    global AGENT_STATE_UNKNOWN, AGENT_STATE_WALL, AGENT_STATE_CLEAR, AGENT_STATE_DIRT, AGENT_STATE_HOME
-
-    if self_state_direction == AGENT_DIRECTION_NORTH:
-        return self_state_world[self_state_pos_x][self_state_pos_y - 1]
-    if self_state_direction == AGENT_DIRECTION_SOUTH:
-        return self_state_world[self_state_pos_x][self_state_pos_y + 1]
-    if self_state_direction == AGENT_DIRECTION_EAST:
-        return self_state_world[self_state_pos_x + 1][self_state_pos_y]
-    if self_state_direction == AGENT_DIRECTION_WEST:
-        return self_state_world[self_state_pos_x - 1][self_state_pos_y]
-
-def get_what_is_right(self_state_world, self_state_pos_x, self_state_pos_y, self_state_direction):
-
-    global AGENT_STATE_UNKNOWN, AGENT_STATE_WALL, AGENT_STATE_CLEAR, AGENT_STATE_DIRT, AGENT_STATE_HOME
-
-    if self_state_direction == AGENT_DIRECTION_NORTH:
-        return self_state_world[self_state_pos_x + 1][self_state_pos_y]
-    if self_state_direction == AGENT_DIRECTION_SOUTH:
-        return self_state_world[self_state_pos_x - 1][self_state_pos_y]
-    if self_state_direction == AGENT_DIRECTION_EAST:
-        return self_state_world[self_state_pos_x][self_state_pos_y - 1]
-    if self_state_direction == AGENT_DIRECTION_WEST:
-        return self_state_world[self_state_pos_x][self_state_pos_y + 1]
-
-def get_what_is_left(self_state_world, self_state_pos_x, self_state_pos_y, self_state_direction):
-
-    global AGENT_STATE_UNKNOWN, AGENT_STATE_WALL, AGENT_STATE_CLEAR, AGENT_STATE_DIRT, AGENT_STATE_HOME
-
-    if self_state_direction == AGENT_DIRECTION_NORTH:
-        return self_state_world[self_state_pos_x - 1][self_state_pos_y]
-    if self_state_direction == AGENT_DIRECTION_SOUTH:
-        return self_state_world[self_state_pos_x + 1][self_state_pos_y]
-    if self_state_direction == AGENT_DIRECTION_EAST:
-        return self_state_world[self_state_pos_x][self_state_pos_y + 1]
-    if self_state_direction == AGENT_DIRECTION_WEST:
-        return self_state_world[self_state_pos_x][self_state_pos_y - 1]
