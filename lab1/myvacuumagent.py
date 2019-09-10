@@ -123,6 +123,9 @@ class MyAgentState:
 
         self.action_queue = []
 
+        self.home = None
+        self.commence_return_home = False
+
         # Metadata
         self.world_width = width
         self.world_height = height
@@ -257,373 +260,246 @@ class MyVacuumAgent(Agent):
         # Debug
         self.state.print_world_debug()
 
-        # Decide action
-        algo = "DFS"  # "new lane" # "snake"
+        # HELPER FUNCTIONS
+        def NSEW_coordinates(C):
+            return Coordinate(C.get_x() + 1, C.get_y()), Coordinate(C.get_x() - 1, C.get_y()), \
+                   Coordinate(C.get_x(), C.get_y() + 1), Coordinate(C.get_x(), C.get_y() - 1)
 
-        if algo == "snake":
-            if dirt:
-                self.log("DIRT -> choosing SUCK action!")
-                self.state.last_action = ACTION_SUCK
-                return ACTION_SUCK
-            if home and self.state.world[1][2] == AGENT_STATE_CLEAR:
-                self.state.last_action = ACTION_NOP
-                return ACTION_NOP
-            if bump and self.state.direction == AGENT_DIRECTION_SOUTH:
-                self.state.last_action = ACTION_TURN_RIGHT
-                return ACTION_TURN_RIGHT
-            if bump and self.state.direction == AGENT_DIRECTION_NORTH:
-                self.state.last_action = ACTION_TURN_LEFT
-                return ACTION_TURN_LEFT
-            if self.state.direction == AGENT_DIRECTION_WEST \
-                    and self.state.world[self.state.pos_x][self.state.pos_y + 1] == AGENT_STATE_WALL \
-                    and self.state.world[self.state.pos_x - 1][self.state.pos_y] == AGENT_STATE_WALL:
-                self.state.last_action = ACTION_TURN_RIGHT
-                return ACTION_TURN_RIGHT
-            if (self.state.last_action == ACTION_TURN_RIGHT or self.state.last_action == ACTION_TURN_LEFT) \
-                    and self.state.direction == AGENT_DIRECTION_WEST:
-                self.state.last_action = ACTION_FORWARD
-                return ACTION_FORWARD
-            if (self.state.last_action == ACTION_FORWARD or self.state.last_action == ACTION_SUCK) \
-                    and self.state.direction == AGENT_DIRECTION_WEST:
-                if self.state.world[self.state.pos_x + 1][self.state.pos_y + 1] == AGENT_STATE_WALL:
-                    self.state.last_action = ACTION_TURN_RIGHT
-                    return ACTION_TURN_RIGHT
+        def get_path_to_next_node(start_C, target_C, self_state_world):
+            START_C = copy.deepcopy(start_C)
+            TARGET_C = copy.deepcopy(target_C)
+            START_C.set_back_node(None)
+            TARGET_C.set_back_node(None)
+
+            unvisited_nodes = [START_C]
+            visited_nodes = []
+
+            back_node_world = [[None for _ in range(self.state.world_height)] for _ in
+                               range(self.state.world_width)]
+
+            while unvisited_nodes != []:
+                this_C = unvisited_nodes.pop(0)
+                visited_nodes.append(this_C)
+                # if the node to visit is our target node, exit while loop
+                if this_C == TARGET_C:
+                    # return path of Coordinates
+                    C_path = []
+                    while back_node_world[this_C.get_x()][this_C.get_y()] != None and this_C != START_C:
+                        C_path.append(Coordinate(this_C.get_x(), this_C.get_y()))
+                        this_C = Coordinate(back_node_world[this_C.get_x()][this_C.get_y()].get_x(),
+                                            back_node_world[this_C.get_x()][this_C.get_y()].get_y())
+                        # C_path.append(this_C.get_back_node()) # does not work because local variable
+                    # finally add START_C as the final node
+                    C_path.append(START_C)
+                    return C_path
+                # otherwise, loop through NSEW and add CLEAR nodes to visit
                 else:
-                    self.state.last_action = ACTION_TURN_LEFT
-                    return ACTION_TURN_LEFT
-            if not bump:
-                self.state.last_action = ACTION_FORWARD
-                return ACTION_FORWARD
+                    N, S, E, W = NSEW_coordinates(this_C)
+                    for P in [N, S, E, W]:
+                        # visited_nodes.append(P)
+                        if P == TARGET_C or (self_state_world[P.get_x()][P.get_y()] in [AGENT_STATE_CLEAR,
+                                                                                        AGENT_STATE_HOME] and Coordinate(
+                                P.get_x(), P.get_y()) not in visited_nodes):
+                            unvisited_nodes.append(P)
+                            visited_nodes.append(P)
+                            # SPECIAL: if node is H, then jot it down
+                            if self_state_world[P.get_x()][P.get_y()] == AGENT_STATE_HOME:
+                                self.state.home = Coordinate(P.get_x(), P.get_y())
+                                print("*********************************************************")
+                                print("HOME FOUND!")
+                                print("*********************************************************")
+                            back_node_world[P.get_x()][P.get_y()] = Coordinate(this_C.get_x(), this_C.get_y())
+                            # back_node_dict[P] = this_C
+                            # P.set_back_node(this_C) # does not work because local variable
+
+        def get_actions_from_path(C_path, current_direction):
+            actions = []
+            current_C = C_path.pop(-1)
+
+            while C_path != []:
+                next_C = C_path.pop(-1)
+
+                if next_C.get_y() - current_C.get_y() == 1:
+                    # need to go down
+                    if current_direction == AGENT_DIRECTION_NORTH:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_SOUTH:
+                        actions.extend([ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_EAST:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_WEST:
+                        actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
+                    current_direction = AGENT_DIRECTION_SOUTH
+
+                elif next_C.get_y() - current_C.get_y() == -1:
+                    # need to go up
+                    if current_direction == AGENT_DIRECTION_NORTH:
+                        actions.extend([ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_SOUTH:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_EAST:
+                        actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_WEST:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    current_direction = AGENT_DIRECTION_NORTH
+
+                elif next_C.get_x() - current_C.get_x() == 1:
+                    # need to go right
+                    if current_direction == AGENT_DIRECTION_NORTH:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_SOUTH:
+                        actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_EAST:
+                        actions.extend([ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_WEST:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    current_direction = AGENT_DIRECTION_EAST
+
+                elif next_C.get_x() - current_C.get_x() == -1:
+                    # need to go left
+                    if current_direction == AGENT_DIRECTION_NORTH:
+                        actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_SOUTH:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_EAST:
+                        actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
+                    elif current_direction == AGENT_DIRECTION_WEST:
+                        actions.extend([ACTION_FORWARD])
+                    current_direction = AGENT_DIRECTION_WEST
+
+                current_C = next_C
+
+            return actions
+        # END HELPER FUNCTIONS
+
+        C = Coordinate(self.state.pos_x, self.state.pos_y)
+        # self.state.visited_coordinates.append(C)
+
+        # Step -3: Sanity check for edge case - sometimes start position = H, and H becomes . immediately
+        # In this case, we scan the world for H first. If H exists, do nothing because algorithm can find it
+        # However, if H cannot be found (and starting coordinate is 1,1), then we have to set H as (1,1)
+        H_exists = False
+        for row in self.state.world:
+            for element in row:
+                if element == AGENT_STATE_HOME:
+                    H_exists = True
+                    break
+            if H_exists:
+                break
+        if not H_exists:
+            self.state.home = Coordinate(1, 1)
+
+        # Step -2: Scan all unvisited nodes for updates
+        for X in self.state.unvisited_coordinates:
+            if X.get_state(self.state.world) not in [AGENT_STATE_UNKNOWN, AGENT_STATE_HOME]:
+                self.state.unvisited_coordinates.remove(X)
+
+        # Step -1: Remove all paths to unreachable areas
+        # Not necessary to maintain state
+        # pass
+
+        # Step 0: Scan NSEW
+        def insert_unvisited_coordinates(C):
+            N = C.get_north_coordinate()
+            S = C.get_south_coordinate()
+            E = C.get_east_coordinate()
+            W = C.get_west_coordinate()
+            NSEW_list = [N, S, E, W]
+            for X in NSEW_list:
+                if X.get_state(self.state.world) in [AGENT_STATE_UNKNOWN, AGENT_STATE_HOME] and X not in self.state.unvisited_coordinates:
+                    self.state.unvisited_coordinates.insert(0, X)
+
+        # Step 1: If unvisited_coordinates is empty, add all unvisited NSEW of current node to list
+        if self.state.action_queue == []:
+            insert_unvisited_coordinates(C)
+
+        # Step 2: Add path to unvisited node
+        # Not necessary to maintain state
+        # pass
+        print("current position: (%s, %s)" % (self.state.pos_x, self.state.pos_y))
+        print("current direction: %s" % (direction_to_string(self.state.direction)))
+
+        print("(before) action_queue:", self.state.action_queue)
+        print("(before) unvisited_coordinates:", self.state.unvisited_coordinates)
+
+        # Step 2B: Handle the LAST action of the action queue
+        if dirt:
+            print("dirt")
+            print("so ACTION_SUCK now")
+            self.state.last_action = ACTION_SUCK
+            return ACTION_SUCK
+        elif bump:
+            print("bump")
+            print("so ACTION_NOP now")
             self.state.last_action = ACTION_NOP
             return ACTION_NOP
+        else:
+            # Step 3: If action queue is not empty, do the action
+            if self.state.action_queue != []:
+                # ========================================================================= #
+                action = self.state.action_queue.pop(0)
+                print("action available")
+                print("so just took a %s" % action)
+                self.state.last_action = action
+                self.state.direction = get_new_direction(self.state.direction, action)
+                return action
+                # ========================================================================= #
+            # Else if action queue is empty and there are still unvisited nodes, pop next node to visit
+            elif self.state.action_queue == [] and self.state.unvisited_coordinates != []:
+                target_C = self.state.unvisited_coordinates.pop(0)
+                print("no actions in queue")
+                print("so go to %s now" % target_C)
 
-        elif algo == "new lane":
-            what_is_ahead = get_what_is_ahead(self.state.world, self.state.pos_x, self.state.pos_y, self.state.direction)
-            print("get_what_is_ahead", what_is_ahead)
-            print("self.state.direction", self.state.direction)
-            print("self.state.last_action:", self.state.last_action)
-            print("self.state.reason_for_last_action:", self.state.reason_for_last_action)
-            if dirt:
-                print("dirt")
-                print("so ACTION_SUCK now")
-                self.state.reason_for_last_action = "dirt"
-                self.state.last_action = ACTION_SUCK
-                return ACTION_SUCK
-            elif bump:
-                print("bump")
-                print("so ACTION_NOP now")
-                self.state.reason_for_last_action = "bump"
-                self.state.last_action = ACTION_NOP
-                return ACTION_NOP
+                # Step 4: Get path to next node via visited nodes
+                C_path = get_path_to_next_node(C, target_C, self.state.world)
+                actions = get_actions_from_path(C_path, self.state.direction)
+                self.state.action_queue.extend(actions)
+                print("(after) action_queue:", self.state.action_queue)
+                print("(after) unvisited_coordinates:", self.state.unvisited_coordinates)
+
+                # ========================================================================= #
+                action = self.state.action_queue.pop(0)
+                print("action available")
+                print("so just took a %s" % action)
+                self.state.last_action = action
+                self.state.direction = get_new_direction(self.state.direction, action)
+                return action
+                # ========================================================================= #
+
+            # Else if no more nodes to visit, terminate
             else:
-                if self.state.last_action == ACTION_NOP and self.state.reason_for_last_action == "bump":
-                    print("else-if")
-                    print("so ACTION_TURN_RIGHT now")
-                    self.state.reason_for_last_action = "else-if"
-                    self.state.last_action = ACTION_TURN_RIGHT
-                    self.state.direction = get_new_direction(self.state.direction, ACTION_TURN_RIGHT)
-                    return ACTION_TURN_RIGHT
-                elif self.state.world[self.state.pos_x][self.state.pos_y - 1] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x][self.state.pos_y + 1] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x - 1][self.state.pos_y] != AGENT_STATE_UNKNOWN and self.state.world[self.state.pos_x + 1][self.state.pos_y] != AGENT_STATE_UNKNOWN:
-                    print("== 0")
-                    print("so RANDOM now")
-                    self.state.reason_for_last_action = "== 0"
-                    random_number = randint(0, 3)
-                    if random_number == 0:
-                        direction = ACTION_TURN_RIGHT
-                    elif random_number == 1:
-                        direction = ACTION_TURN_LEFT
-                    else:
-                        direction = ACTION_FORWARD
-                    self.state.last_action = direction
-                    self.state.direction = get_new_direction(self.state.direction, direction)
-                    return direction
-                elif what_is_ahead != AGENT_STATE_UNKNOWN and what_is_ahead != AGENT_STATE_HOME:
-                    print("elif")
-                    print("so ACTION_TURN_RIGHT now")
-                    self.state.reason_for_last_action = "elif"
-                    self.state.last_action = ACTION_TURN_RIGHT
-                    self.state.direction = get_new_direction(self.state.direction, ACTION_TURN_RIGHT)
-                    return ACTION_TURN_RIGHT
-                else:
-                    print("else-else")
-                    print("so ACTION_FORWARD now")
-                    self.state.reason_for_last_action = "else-else"
-                    self.state.last_action = ACTION_FORWARD
-                    return ACTION_FORWARD
+                print("THERE ARE NO MORE NODES OR ACTIONS TO TAKE!")
+                print("RETURNING TO H...")
 
-        elif algo == "DFS":
+                # If at home, terminate
+                if self.state.home == Coordinate(self.state.pos_x, self.state.pos_y):
+                    self.iteration_counter = 0
+                    # Because visiting H will override it with . we must put H back into the world
+                    self.state.world[self.state.home.get_x()][self.state.home.get_y()] = AGENT_STATE_HOME
+                    self.state.print_world_debug()
+                    return
 
-            C = Coordinate(self.state.pos_x, self.state.pos_y)
-            # self.state.visited_coordinates.append(C)
-
-            # Step -2: Scan all unvisited nodes for updates
-            for X in self.state.unvisited_coordinates:
-                if X.get_state(self.state.world) != AGENT_STATE_UNKNOWN:
-                    self.state.unvisited_coordinates.remove(X)
-
-            # Step -1: Remove all paths to unreachable areas
-            # Not necessary to maintain state
-            # pass
-
-            # Step 0: Scan NSEW
-            def insert_unvisited_coordinates(C):
-                N = C.get_north_coordinate()
-                S = C.get_south_coordinate()
-                E = C.get_east_coordinate()
-                W = C.get_west_coordinate()
-                NSEW_list = [N, S, E, W]
-                for X in NSEW_list:
-                    if X.get_state(self.state.world) == AGENT_STATE_UNKNOWN and X not in self.state.unvisited_coordinates:
-                        self.state.unvisited_coordinates.insert(0, X)
-
-            # Step 1: If unvisited_coordinates is empty, add all unvisited NSEW of current node to list
-            if self.state.action_queue == []:
-                insert_unvisited_coordinates(C)
-
-            # Step 2: Add path to unvisited node
-            # Not necessary to maintain state
-            # pass
-            print("current position: (%s, %s)" % (self.state.pos_x, self.state.pos_y))
-            print("current direction: %s" % (direction_to_string(self.state.direction)))
-
-            print("(before) action_queue:", self.state.action_queue)
-            print("(before) unvisited_coordinates:", self.state.unvisited_coordinates)
-
-            # Step 2B: Handle the LAST action of the action queue
-            if dirt:
-                print("dirt")
-                print("so ACTION_SUCK now")
-                self.state.last_action = ACTION_SUCK
-                return ACTION_SUCK
-            elif bump:
-                print("bump")
-                print("so ACTION_NOP now")
-                self.state.last_action = ACTION_NOP
-                return ACTION_NOP
-            else:
-                # Step 3: If action queue is not empty, do the action
-                if self.state.action_queue != []:
-                    # ========================================================================= #
-                    action = self.state.action_queue.pop(0)
-                    print("action available")
-                    print("so just took a %s" % action)
-                    self.state.last_action = action
-                    self.state.direction = get_new_direction(self.state.direction, action)
-                    return action
-                    # ========================================================================= #
-                # Else if action queue is empty and there are still unvisited nodes, pop next node to visit
-                elif self.state.action_queue == [] and self.state.unvisited_coordinates != []:
-                    target_C = self.state.unvisited_coordinates.pop(0)
-                    print("no actions in queue")
-                    print("so go to %s now" % target_C)
-
-                    # Step 4: Get path to next node via visited nodes
-                    def NSEW_coordinates(C):
-                        return Coordinate(C.get_x() + 1, C.get_y()), Coordinate(C.get_x() - 1, C.get_y()), \
-                               Coordinate(C.get_x(), C.get_y() + 1), Coordinate(C.get_x(), C.get_y() - 1)
-
-                    def get_path_to_next_node(start_C, target_C, self_state_world):
-                        START_C = copy.deepcopy(start_C)
-                        TARGET_C = copy.deepcopy(target_C)
-                        START_C.set_back_node(None)
-                        TARGET_C.set_back_node(None)
-
-                        unvisited_nodes = [START_C]
-                        visited_nodes = []
-
-                        back_node_world = [[None for _ in range(self.state.world_height)] for _ in range(self.state.world_width)]
-
-                        while unvisited_nodes != []:
-                            this_C = unvisited_nodes.pop(0)
-                            visited_nodes.append(this_C)
-                            # if the node to visit is our target node, exit while loop
-                            if this_C == TARGET_C:
-                                # return path of Coordinates
-                                C_path = []
-                                while back_node_world[this_C.get_x()][this_C.get_y()] != None and this_C != START_C:
-                                    C_path.append(Coordinate(this_C.get_x(), this_C.get_y()))
-                                    this_C = Coordinate(back_node_world[this_C.get_x()][this_C.get_y()].get_x(), back_node_world[this_C.get_x()][this_C.get_y()].get_y())
-                                    # C_path.append(this_C.get_back_node()) # does not work because local variable
-                                # finally add START_C as the final node
-                                C_path.append(START_C)
-                                return C_path
-                            # otherwise, loop through NSEW and add CLEAR nodes to visit
-                            else:
-                                N, S, E, W = NSEW_coordinates(this_C)
-                                for P in [N, S, E, W]:
-                                    # visited_nodes.append(P)
-                                    if P == TARGET_C or (self_state_world[P.get_x()][P.get_y()] == AGENT_STATE_CLEAR and Coordinate(P.get_x(), P.get_y()) not in visited_nodes):
-                                        unvisited_nodes.append(P)
-                                        back_node_world[P.get_x()][P.get_y()] = Coordinate(this_C.get_x(), this_C.get_y())
-                                        # back_node_dict[P] = this_C
-                                        # P.set_back_node(this_C) # does not work because local variable
-
-                    def get_actions_from_path(C_path, current_direction):
-                        actions = []
-                        current_C = C_path.pop(-1)
-
-                        while C_path != []:
-                            next_C = C_path.pop(-1)
-
-                            if next_C.get_y() - current_C.get_y() == 1:
-                                # need to go down
-                                if current_direction == AGENT_DIRECTION_NORTH:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_SOUTH:
-                                    actions.extend([ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_EAST:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_WEST:
-                                    actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
-                                current_direction = AGENT_DIRECTION_SOUTH
-
-                            elif next_C.get_y() - current_C.get_y() == -1:
-                                # need to go up
-                                if current_direction == AGENT_DIRECTION_NORTH:
-                                    actions.extend([ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_SOUTH:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_EAST:
-                                    actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_WEST:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                current_direction = AGENT_DIRECTION_NORTH
-
-                            elif next_C.get_x() - current_C.get_x() == 1:
-                                # need to go right
-                                if current_direction == AGENT_DIRECTION_NORTH:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_SOUTH:
-                                    actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_EAST:
-                                    actions.extend([ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_WEST:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                current_direction = AGENT_DIRECTION_EAST
-
-                            elif next_C.get_x() - current_C.get_x() == -1:
-                                # need to go left
-                                if current_direction == AGENT_DIRECTION_NORTH:
-                                    actions.extend([ACTION_TURN_LEFT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_SOUTH:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_EAST:
-                                    actions.extend([ACTION_TURN_RIGHT, ACTION_TURN_RIGHT, ACTION_FORWARD])
-                                elif current_direction == AGENT_DIRECTION_WEST:
-                                    actions.extend([ACTION_FORWARD])
-                                current_direction = AGENT_DIRECTION_WEST
-
-                            current_C = next_C
-
-                        return actions
-
-                    C_path = get_path_to_next_node(C, target_C, self.state.world)
+                # Else, do a 1-time finding of path back home
+                if not self.state.commence_return_home:
+                    C_path = get_path_to_next_node(Coordinate(self.state.pos_x, self.state.pos_y), self.state.home, self.state.world)
                     actions = get_actions_from_path(C_path, self.state.direction)
                     self.state.action_queue.extend(actions)
                     print("(after) action_queue:", self.state.action_queue)
                     print("(after) unvisited_coordinates:", self.state.unvisited_coordinates)
+                    self.state.commence_return_home = True
 
-                    # ========================================================================= #
+                # ========================================================================= #
+                if self.state.action_queue != []:
                     action = self.state.action_queue.pop(0)
                     print("action available")
                     print("so just took a %s" % action)
                     self.state.last_action = action
                     self.state.direction = get_new_direction(self.state.direction, action)
                     return action
-                    # ========================================================================= #
-
-                # Else if no more nodes to visit, terminate
-                else:
-                    self.iteration_counter = 0
-                    return
+                # ========================================================================= #
 
 
             # ========================================
-
-            # Initialize self.state.backtracking_path
-            # if self.state.backtracking_path == []:
-                # self.state.backtracking_path.append([self.state.pos_x, self.state.pos_y])
-                # self.state.network['']
-            # elif [self.state.pos_x, self.state.pos_y] not in self.state.backtracking_path:
-                # self.state.backtracking_path.append([self.state.pos_x, self.state.pos_y])
-                # self.state.index += 1
-
-            # # Check that every node which are not ? is removed from unvisited_nodes_list
-            # for node in self.state.nodes_to_visit:
-            #     if self.state.world[node[0]][node[1]] != AGENT_STATE_UNKNOWN:
-            #         self.state.nodes_to_visit.remove(node)
-            #         self.state.node_network[node[0]][node[1]] = None
-            #
-            # # Look around NSEW to find unvisited nodes
-            # unvisited_nodes_list = get_NSEW_ahead(self.state.world, self.state.pos_x, self.state.pos_y)
-            # for ahead in unvisited_nodes_list:
-            #     if ahead not in self.state.nodes_to_visit:
-            #         x = ahead[0]
-            #         y = ahead[1]
-            #         self.state.nodes_to_visit.insert([x,y], 0)
-            #         self.state.node_network[x][y] = [self.state.pos_x, self.state.pos_y]
-            #
-            # # =========================================================================================================
-            # # If action_queue is empty, check front of unvisited_nodes_list
-            # if len(self.state.nodes_to_visit) > 0:
-            #     next_node_to_visit = self.state.nodes_to_visit[0]
-            #     self.state.nodes_to_visit.remove(0)
-            #
-            #     # Queue new actions from current position to next_node_to_visit
-            #     # get_actions_to_take([self.state.pos_x, self.state.pos_y], next_node_to_visit)
-            #
-            # # Else if action_queue and unvisited_nodes_list is empty, terminate!
-            # else:
-            #     return
-            # # =========================================================================================================
-            #
-            # what_is_ahead = get_what_is_ahead(self.state.world, self.state.pos_x, self.state.pos_y, self.state.direction)
-            # print("get_what_is_ahead", what_is_ahead)
-            # print("self.state.direction", self.state.direction)
-            # print("self.state.last_action:", self.state.last_action)
-            # print("self.state.reason_for_last_action:", self.state.reason_for_last_action)
-            # if dirt:
-            #     print("dirt")
-            #     print("so ACTION_SUCK now")
-            #     self.state.reason_for_last_action = "dirt"
-            #     self.state.last_action = ACTION_SUCK
-            #     return ACTION_SUCK
-            # elif bump:
-            #     print("bump")
-            #     print("so ACTION_NOP now")
-            #     self.state.reason_for_last_action = "bump"
-            #     self.state.last_action = ACTION_NOP
-            #     return ACTION_NOP
-            # else:
-            #     pass
-
-    def get_actions_to_take(self, current_node, next_node_to_visit):
-        # nodes are in [x,y]
-        node_network = [[None for _ in range(self.state.world_height)] for _ in range(self.state.world_width)]
-        visited_nodes = []
-        queue = []
-
-        # Initialize queue
-        if self.state.world[current_node[0]][current_node[1] + 1] == AGENT_STATE_CLEAR and \
-                [current_node[0]][current_node[1] + 1] not in visited_nodes:
-            queue.append(self.state.world[current_node[0]][current_node[1] + 1])
-            node_network[current_node[0]][current_node[1]] = [current_node[0], current_node[1] + 1]
-            node_network[current_node[0]][current_node[1] + 1] = [current_node[0], current_node[1]]
-        if self.state.world[current_node[0]][current_node[1] - 1] == AGENT_STATE_CLEAR and \
-                [current_node[0]][current_node[1] - 1] not in visited_nodes:
-            queue.append(self.state.world[current_node[0]][current_node[1] - 1])
-            node_network[current_node[0]][current_node[1]] = [current_node[0], current_node[1] - 1]
-            node_network[current_node[0]][current_node[1] - 1] = [current_node[0], current_node[1]]
-        if self.state.world[current_node[0] + 1][current_node[1]] == AGENT_STATE_CLEAR and \
-                [current_node[0] + 1][current_node[1]] not in visited_nodes:
-            queue.append(self.state.world[current_node[0] + 1][current_node[1]])
-            node_network[current_node[0]][current_node[1]] = [current_node[0] + 1, current_node[1]]
-            node_network[current_node[0] + 1][current_node[1]] = [current_node[0], current_node[1]]
-        if self.state.world[current_node[0] - 1][current_node[1]] == AGENT_STATE_CLEAR and \
-                [current_node[0] - 1][current_node[1]] not in visited_nodes:
-            queue.append(self.state.world[current_node[0] - 1][current_node[1]])
-            node_network[current_node[0]][current_node[1]] = [current_node[0] - 1, current_node[1]]
-            node_network[current_node[0] - 1][current_node[1]] = [current_node[0], current_node[1]]
 
 def get_new_direction(self_state_direction, new_action):
 
@@ -688,21 +564,3 @@ def get_what_is_left(self_state_world, self_state_pos_x, self_state_pos_y, self_
         return self_state_world[self_state_pos_x][self_state_pos_y + 1]
     if self_state_direction == AGENT_DIRECTION_WEST:
         return self_state_world[self_state_pos_x][self_state_pos_y - 1]
-
-def get_NSEW_ahead(self_state_world, self_state_pos_x, self_state_pos_y):
-
-    global AGENT_STATE_UNKNOWN, AGENT_STATE_WALL, AGENT_STATE_CLEAR, AGENT_STATE_DIRT, AGENT_STATE_HOME
-
-    unvisited_nodes_list = []
-
-    if self_state_world[self_state_pos_x][self_state_pos_y + 1] == AGENT_STATE_UNKNOWN:
-        unvisited_nodes_list.append([self_state_pos_x, self_state_pos_y + 1])
-    if self_state_world[self_state_pos_x][self_state_pos_y - 1] == AGENT_STATE_UNKNOWN:
-        unvisited_nodes_list.append([self_state_pos_x, self_state_pos_y - 1])
-    if self_state_world[self_state_pos_x + 1][self_state_pos_y] == AGENT_STATE_UNKNOWN:
-        unvisited_nodes_list.append([self_state_pos_x + 1, self_state_pos_y])
-    if self_state_world[self_state_pos_x - 1][self_state_pos_y] == AGENT_STATE_UNKNOWN:
-        unvisited_nodes_list.append([self_state_pos_x - 1, self_state_pos_y])
-
-    return unvisited_nodes_list
-
